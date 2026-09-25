@@ -1,0 +1,21 @@
+{
+  "movie": "/Users/owenplanchart/TouchDesignerProjects/ArucoMarkerSketch/ArucoBalls.MOV",
+  "active_ids": [0, 1, 2, 3, 4],
+  "analysis_scale": 0.5,
+  "roi": [0.0, 0.0, 1.0, 1.0],
+  "rotation_quarters": 0,
+  "mirror": false,
+  "group_distance": 0.12,
+  "lost_after": 3.0,
+  "gap_seconds": 0.5,
+  "trail_seconds": 8.0,
+  "history_limit": 1800,
+  "candle_seconds": 1.0,
+  "index_base": 100.0,
+  "index_gain": 100.0,
+  "window_width": 900,
+  "window_height": 1600,
+  "layout": "auto",
+  "camera_index": 0,
+  "loop": false
+}
