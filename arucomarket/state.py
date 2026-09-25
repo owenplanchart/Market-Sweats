@@ -1,9 +1,10 @@
-"""Headless observations, freshness, and genuine-sample OHLC. No forecasts/trading."""
+"""Headless observations and a separate source-time experimental paper market."""
 from collections import deque
 from dataclasses import dataclass, asdict
 import math
 import numpy as np
 from .config import Config
+from .prediction import PaperMarket
 
 
 @dataclass(frozen=True)
@@ -40,6 +41,7 @@ class Engine:
         self.reset()
 
     def reset(self):
+        self.market = PaperMarket(self.config)
         self.timestamp = None
         self.frame_id = None
         self.source = None
@@ -91,6 +93,7 @@ class Engine:
                 candles[-1].add(sample.index)
             else:
                 candles.append(Candle(start, sample.index, sample.index, sample.index, sample.index))
+        self.market.process(timestamp, self.histories, self.states)
         return fresh
 
     def snapshot(self):
@@ -99,4 +102,5 @@ class Engine:
             "states": self.states.copy(), "raw": [o.to_dict() for o in self.raw],
             "histories": {i: [asdict(s) for s in h] for i, h in self.histories.items()},
             "candles": {i: [asdict(c) for c in cs] for i, cs in self.candles.items()},
+            "market": self.market.snapshot(),
         }

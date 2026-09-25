@@ -5,7 +5,7 @@ from .config import Config
 
 
 def main():
-    parser = argparse.ArgumentParser(description="ArUcoMarket Stage 1 — artistic observed index")
+    parser = argparse.ArgumentParser(description="ArUcoMarket — observations and experimental UP/DOWN paper market")
     parser.add_argument("--config", default="config.json")
     source = parser.add_mutually_exclusive_group()
     source.add_argument("--movie")

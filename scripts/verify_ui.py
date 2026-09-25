@@ -17,6 +17,7 @@ from arucomarket.worker import Worker
 config = Config.load('config.json')
 app = QtWidgets.QApplication([])
 window = Window(config, 'movie', config.movie, start_worker=False)
+window.tabs.setCurrentIndex(1)
 window.resize(900,1600)
 window.show()
 source = Movie(config.movie, 15)

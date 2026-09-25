@@ -1,9 +1,10 @@
 """Restrained camera composite and source-time market panels."""
 from queue import Empty
-import numpy as np
 from PySide6 import QtCore, QtGui, QtWidgets
 import pyqtgraph as pg
 from .worker import Worker
+from .trial_ui import TrialPanel
+from .prediction import Forecast
 
 COLORS = ["#f0af68", "#67d4c3", "#87aef6", "#c3a0ec", "#d8d879"]
 
@@ -16,6 +17,8 @@ class CameraView(QtWidgets.QWidget):
         self.state = None
         self.outlines = self.labels = self.trails = self.held = True
         self.trail_seconds = config.trail_seconds
+        self.prediction_ball = 0
+        self.show_prediction = True
         self.setMinimumSize(260, 320)
 
     def set_frame(self, image, state):
@@ -46,8 +49,6 @@ class CameraView(QtWidgets.QWidget):
                 for a, b in zip(visible, visible[1:]):
                     color.setAlphaF(max(.12, 1-(now-b["timestamp"])/self.trail_seconds))
                     pen = QtGui.QPen(color, 1.5/scale)
-                    if b["timestamp"]-a["timestamp"] > self.config.gap_seconds:
-                        pen.setStyle(QtCore.Qt.PenStyle.DashLine)
                     p.setPen(pen)
                     p.drawLine(QtCore.QPointF(*a["centre"]), QtCore.QPointF(*b["centre"]))
             if self.held and history and self.state["states"][mid] != "observed":
@@ -56,6 +57,37 @@ class CameraView(QtWidgets.QWidget):
                 p.setPen(QtGui.QPen(color, 1/scale, QtCore.Qt.PenStyle.DashLine))
                 p.setBrush(QtCore.Qt.BrushStyle.NoBrush)
                 p.drawEllipse(QtCore.QPointF(*last["centre"]), 10/scale, 10/scale)
+        if self.show_prediction and "market" in self.state:
+            ball = self.state["market"]["balls"][self.prediction_ball]
+            round_ = ball["round"]
+            if round_ and round_["status"] == "OPEN":
+                terms = round_["terms"]
+                forecast = Forecast(**terms["forecast"])
+                roi = self.config.roi
+                height = self.image.height() - 1
+                width = self.image.width() - 1
+                gx = (roi[0] + forecast.x * roi[2]) * width
+                gy = (roi[1] + (1 - forecast.at(4.)) * roi[3]) * height
+                origin_y = (roi[1] + (1 - forecast.height) * roi[3]) * height
+                spread = 2 * forecast.spread(4.) * roi[3] * height
+                color = QtGui.QColor(COLORS[self.prediction_ball])
+                p.save()
+                p.setClipRect(QtCore.QRectF(0, 0, width, height))
+                fill = QtGui.QColor(color); fill.setAlpha(28)
+                p.setBrush(fill)
+                p.setPen(QtCore.Qt.PenStyle.NoPen)
+                # Width is just a glyph: only vertical movement is forecast.
+                p.drawEllipse(QtCore.QPointF(gx, gy), 14/scale, spread)
+                p.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+                p.setPen(QtGui.QPen(color, 2/scale, QtCore.Qt.PenStyle.DotLine))
+                p.drawLine(QtCore.QPointF(gx, origin_y), QtCore.QPointF(gx, gy))
+                p.setPen(QtGui.QPen(color, 2/scale))
+                p.drawEllipse(QtCore.QPointF(gx, gy), 10/scale, 10/scale)
+                p.setFont(QtGui.QFont("Menlo", max(9, int(10/scale))))
+                label_y = min(max(gy, 18/scale), height - 12/scale)
+                label_x = min(max(gx + 15/scale, 8/scale), max(8/scale, width - 210/scale))
+                p.drawText(QtCore.QPointF(label_x, label_y), f"{self.prediction_ball} {terms['direction']} · original +4s")
+                p.restore()
         p.setFont(QtGui.QFont("Menlo", max(9, int(10/scale))))
         for obs in self.state["raw"]:
             mid = obs["marker_id"]
@@ -127,7 +159,7 @@ class Window(QtWidgets.QMainWindow):
         self._layout_pending = False
         self._layout_ready = False
         self._portrait_layout = None
-        self.setWindowTitle("ArUcoMarket · Observed index")
+        self.setWindowTitle("ArUcoMarket · UP / DOWN trial")
         screen = self.screen().availableGeometry()
         width, height = config.window_width, config.window_height
         if height > screen.height()-80 and screen.width() > screen.height():
@@ -151,7 +183,7 @@ class Window(QtWidgets.QMainWindow):
         title.setObjectName("title")
         heading.addWidget(title)
         heading.addStretch()
-        heading.addWidget(QtWidgets.QLabel("STAGE 01   /   PHYSICAL OBSERVATIONS"))
+        heading.addWidget(QtWidgets.QLabel("UP / DOWN   /   PAPER MARKET TRIAL"))
         layout.addLayout(heading)
         self.source_label = QtWidgets.QLabel()
         self.source_label.setObjectName("muted")
@@ -204,9 +236,19 @@ class Window(QtWidgets.QMainWindow):
         self.market_scroll.setWidget(self.panels)
         self.market_scroll.setMinimumWidth(320)
         self.market_scroll.viewport().installEventFilter(self)
-        markets = QtWidgets.QVBoxLayout(self.panels)
-        markets.setSizeConstraint(QtWidgets.QLayout.SizeConstraint.SetMinAndMaxSize)
-        markets.setContentsMargins(12, 0, 0, 0)
+        outer = QtWidgets.QVBoxLayout(self.panels)
+        outer.setSizeConstraint(QtWidgets.QLayout.SizeConstraint.SetMinAndMaxSize)
+        outer.setContentsMargins(12, 0, 0, 0)
+        self.tabs = QtWidgets.QTabWidget()
+        self.trial = TrialPanel(config, COLORS, plot)
+        self.trial.selected.connect(self.select_prediction)
+        self.tabs.addTab(self.trial, "UP / DOWN trial")
+        observed_panel = QtWidgets.QWidget()
+        markets = QtWidgets.QVBoxLayout(observed_panel)
+        markets.setContentsMargins(0, 0, 0, 0)
+        self.tabs.addTab(observed_panel, "Observed index / OHLC")
+        self.tabs.currentChanged.connect(self.change_market_view)
+        outer.addWidget(self.tabs)
         note = QtWidgets.QLabel(f"OBSERVED INDEX   P = {config.index_base:g} + {config.index_gain:g} × x\nArtistic index · x is horizontal position · y increases downward")
         note.setObjectName("muted")
         markets.addWidget(note)
@@ -222,9 +264,7 @@ class Window(QtWidgets.QMainWindow):
         markets.addWidget(self.ticker)
         self.history = plot("Observed index · dots are sightings", "Index")
         self.history.setToolTip("Each colour connects successive sightings of the same ball.\n"
-                               "Dashed segments bridge long observation gaps; they do not measure unseen movement.")
-        self.gap_curves = [self.history.plot(pen=pg.mkPen(c, width=2, style=QtCore.Qt.PenStyle.DashLine),
-                                             connect="pairs") for c in COLORS]
+                               "Straight lines interpolate between sightings, including gaps; only dots are measured.")
         self.curves = [self.history.plot(pen=pg.mkPen(c, width=2), symbol="o", symbolSize=6,
                                          symbolBrush=c, symbolPen=None, connect="finite") for c in COLORS]
         self.charts = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
@@ -253,7 +293,7 @@ class Window(QtWidgets.QMainWindow):
         candle_layout.addWidget(self.ohlc, 1)
         self.charts.addWidget(self.candle_panel)
         markets.addWidget(self.charts, 1)
-        caption = QtWidgets.QLabel("¹ Activity = sightings, not trades. Missing intervals stay empty.\nSolid outlines: observed · Dashed rings: held · Dashed trails: gaps")
+        caption = QtWidgets.QLabel("¹ Activity = sightings, not trades. Lines interpolate between sightings.\nSolid outlines: observed · Dashed rings: held · OHLC uses actual sightings only")
         caption.setObjectName("muted")
         markets.addWidget(caption)
         self.split.addWidget(self.market_scroll)
@@ -286,6 +326,7 @@ class Window(QtWidgets.QMainWindow):
         layout.addWidget(self.status)
         self.setCentralWidget(root)
         self._layout_ready = True
+        self.change_market_view(0)
         self.set_layout()
         QtGui.QShortcut(QtGui.QKeySequence("Space"), self, activated=self.play.click)
         QtGui.QShortcut(QtGui.QKeySequence("Escape"), self, activated=self.showNormal)
@@ -341,6 +382,20 @@ class Window(QtWidgets.QMainWindow):
         setattr(self.view, name, value)
         self.view.update()
 
+    def select_prediction(self, mid):
+        self.view.prediction_ball = mid
+        self.view.update()
+
+    def change_market_view(self, index):
+        self.view.show_prediction = index == 0
+        self.view.update()
+        for i in range(self.tabs.count()):
+            policy = (QtWidgets.QSizePolicy.Policy.Preferred if i == index else
+                      QtWidgets.QSizePolicy.Policy.Ignored)
+            self.tabs.widget(i).setSizePolicy(policy, policy)
+        self.tabs.updateGeometry()
+        self.set_layout()
+
     def toggle_pause(self, paused):
         self.send("pause", paused)
         self.play.setText("Play" if paused else "Pause")
@@ -387,9 +442,10 @@ class Window(QtWidgets.QMainWindow):
         for mid in range(5):
             for col, text in enumerate([f"● {mid}", "—", "—", "—", "lost", "0"]):
                 self.ticker.setItem(mid, col, QtWidgets.QTableWidgetItem(text))
-        for curve in self.curves + self.gap_curves:
+        for curve in self.curves:
             curve.setData([], [])
         self.candles.set_data([], COLORS[0], self.config.candle_seconds)
+        self.trial.clear()
 
     def poll(self):
         try:
@@ -426,6 +482,7 @@ class Window(QtWidgets.QMainWindow):
             return
         state = self.last_payload["state"]
         now = state["timestamp"]
+        self.trial.update_state(state)
         interval = self.config.candle_seconds
         for mid, history in state["histories"].items():
             last = history[-1] if history else None
@@ -438,18 +495,7 @@ class Window(QtWidgets.QMainWindow):
                 item = self.ticker.item(mid, col)
                 item.setText(value)
                 item.setForeground(QtGui.QColor(COLORS[mid] if col in (0, 1) else "#a2afbf"))
-            xs, ys = [], []
-            gap_xs, gap_ys = [], []
-            previous = None
-            for s in history:
-                if previous is not None and s["timestamp"]-previous["timestamp"] > self.config.gap_seconds:
-                    xs.append(np.nan); ys.append(np.nan)
-                    gap_xs.extend([previous["timestamp"], s["timestamp"]])
-                    gap_ys.extend([previous["index"], s["index"]])
-                xs.append(s["timestamp"]); ys.append(s["index"])
-                previous = s
-            self.curves[mid].setData(xs, ys)
-            self.gap_curves[mid].setData(gap_xs, gap_ys)
+            self.curves[mid].setData([s["timestamp"] for s in history], [s["index"] for s in history])
         mid = self.candle_ball.currentIndex()
         self.candles.set_data(state["candles"][mid], COLORS[mid], interval)
         self.empty_candles.setVisible(not state["candles"][mid])
