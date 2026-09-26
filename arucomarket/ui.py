@@ -508,8 +508,12 @@ class Window(QtWidgets.QMainWindow):
         self.history.setXRange(left, right, padding=0)
         self.ohlc.setXRange(left, right, padding=0)
 
-    def closeEvent(self, event):
+    def shutdown(self):
+        self.timer.stop()
         self.worker.stopping.set()
         if self.worker.is_alive():
             self.worker.join(timeout=2)
+
+    def closeEvent(self, event):
+        self.shutdown()
         event.accept()

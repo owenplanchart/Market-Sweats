@@ -71,6 +71,30 @@ try:
                     for _ in range(8): app.processEvents()
                     assert not window.trial.band.path().isEmpty(), 'Forecast range must render'
                     assert window.market_scroll.verticalScrollBar().maximum() == 0, 'Desktop trial should fit'
+                    assert window.trial.visible_ids == set(config.active_ids)
+                    assert all(toggle.isChecked() for toggle in window.trial.visibility.values())
+                    plotted_histories = 0
+                    plotted_contracts = 0
+                    for ball_id in config.active_ids:
+                        observed_x, _ = window.trial.series[ball_id]['observed'].getData()
+                        if observed_x is not None and len(observed_x) >= 2:
+                            plotted_histories += 1
+                        quote_x, _ = window.trial.series[ball_id]['quote'].getData()
+                        estimate_x, _ = window.trial.series[ball_id]['estimated_quote'].getData()
+                        if ((quote_x is not None and len(quote_x) >= 2)
+                                or (estimate_x is not None and len(estimate_x) >= 2)):
+                            plotted_contracts += 1
+                    minimum_balls = 2 if args.movie else 3
+                    assert plotted_histories >= minimum_balls, 'Multiple ball histories must render together'
+                    assert plotted_contracts >= minimum_balls, 'Multiple contract quotes must render together'
+                    window.trial.visibility[mid].setChecked(False)
+                    app.processEvents()
+                    assert mid not in window.trial.visible_ids
+                    assert not window.trial.series[mid]['observed'].isVisible()
+                    window.trial.choose_row(config.active_ids.index(mid), 0)
+                    app.processEvents()
+                    assert window.trial.visibility[mid].isChecked(), 'Ticker focus must reveal a hidden ball'
+                    assert window.trial.series[mid]['observed'].isVisible()
                     if args.movie:
                         projected_x, projected_y = window.trial.estimated_quote.getData()
                         assert projected_x is not None and len(projected_x) >= 2, 'Dashed quote must render'

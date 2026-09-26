@@ -8,7 +8,7 @@
   "group_distance": 0.12,
   "lost_after": 3.0,
   "gap_seconds": 0.5,
-  "trail_seconds": 8.0,
+  "trail_seconds": 22.0,
   "history_limit": 1800,
   "candle_seconds": 1.0,
   "index_base": 100.0,

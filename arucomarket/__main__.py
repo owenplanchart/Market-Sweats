@@ -56,10 +56,11 @@ def main():
             if recorder:
                 recorder.close()
         return
-    from PySide6.QtWidgets import QApplication
+    from .application import Application
     from .ui import Window
-    app = QApplication([])
+    app = Application([])
     window = Window(config, kind, value, args.log)
+    app.aboutToQuit.connect(window.shutdown)
     window.show()
     app.exec()
 
